@@ -1,0 +1,7 @@
+classes/
+target/
+war/
+lib/
+.classpath
+.project
+.settings
