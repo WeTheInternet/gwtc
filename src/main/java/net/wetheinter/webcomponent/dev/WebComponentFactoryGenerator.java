@@ -70,6 +70,7 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
   }
 
   private static final Pattern BEAN_NAME = Pattern.compile("(is|get|set)(.+)");
+  private JClassType           stringType;
 
   @Override
   public RebindResult generateIncrementally(TreeLogger logger,
@@ -194,7 +195,7 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
           .setPayload(pw);
       source.getClassBuffer().createConstructor(PRIVATE);
     }
-    JClassType stringType = context.getTypeOracle().findType("java.lang.String");
+    stringType = context.getTypeOracle().findType("java.lang.String");
     // }
     for (JMethod method : iface.getMethods()) {
       if (method.getAnnotation(NativelySupported.class) != null) {
@@ -222,8 +223,7 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
           // A default method! Let's generate a method to extract a javascript
           // function that will correctly handle un/boxing when passing values.
           if (source != null) {
-            generateDefaultFunctionAccessor(logger, method,
-              source.getClassBuffer(), stringType);
+            generateDefaultFunctionAccessor(logger, method, source.getClassBuffer());
           }
         } else {
           // An abstract method should be treated like a JsType method;
@@ -253,14 +253,14 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
               data.getterName = "get_" + method.getName();
               data.getterClass = qualified;
               if (source != null) {
-                generateGetter(logger, debeaned, data, method, source, stringType);
+                generateGetter(logger, debeaned, data, method, source);
               }
             } else {
               // Setter
               data.setterName = "set_" + method.getName();
               data.setterClass = qualified;
               if (source != null) {
-                generateSetter(logger, debeaned, data, method, source, stringType);
+                generateSetter(logger, debeaned, data, method, source);
               }
             }
             existing = Sets.add((Set<MethodData>) existing, data);
@@ -284,11 +284,12 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
   }
 
   private void generateSetter(TreeLogger logger, String debeaned, MethodData data, JMethod method,
-      SourceBuilder<PrintWriter> source, JType stringType) {
+      SourceBuilder<PrintWriter> source) {
     MethodBuffer out = source.getClassBuffer()
       .createMethod("public static JavaScriptObject set_" + method.getName())
       .makeJsni();
-    String paramBoxing = maybeBox(logger, method.getParameterTypes()[0], false, out, stringType);
+    String boxingPrefix = maybeBoxPrefix(logger, method.getParameterTypes()[0], false, out);
+    String boxingSuffix = maybeBoxSuffix(logger, method.getParameterTypes()[0], false, out);
     boolean fluent = method.getReturnType() != JPrimitiveType.VOID;
     assert !fluent || isAssignableFrom(method.getReturnType(), method.getEnclosingType()) : "Cannot implement fluent method "
       + method.getJsniSignature();
@@ -298,13 +299,13 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
     if (data.mapToAttribute) {
       out
         .print("this.setAttribute('" + debeaned + "',")
-        .print(paramBoxing + "i" + (paramBoxing.isEmpty() ? "" : ")"))
+        .print(boxingPrefix + "i" + boxingSuffix)
         .println(");");
     } else {
       out
         .print("this.__").print(debeaned)
         .print(" = ")
-        .print(paramBoxing).print("i").print(paramBoxing.isEmpty() ? "" : ")")
+        .print(boxingPrefix).print("i").print(boxingSuffix)
         .println(";");
     }
 
@@ -323,24 +324,25 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
   }
 
   private void generateGetter(TreeLogger logger, String debeaned, MethodData data, JMethod method,
-      SourceBuilder<PrintWriter> source, JType stringType) {
+      SourceBuilder<PrintWriter> source) {
     MethodBuffer out = source.getClassBuffer()
       .createMethod("public static JavaScriptObject get_" + method.getName())
       .makeJsni();
-    String paramBoxing = maybeBox(logger, method.getReturnType(), true, out, stringType);
+    String boxingPrefix = maybeBoxPrefix(logger, method.getReturnType(), true, out);
+    String boxingSuffix = maybeBoxSuffix(logger, method.getReturnType(), true, out);
     out
       .println("return function() {")
       .indent()
       .print("return ");
     if (data.mapToAttribute) {
-      out.print(paramBoxing)
+      out.print(boxingPrefix)
         // our boxing code will automatically handle primitive conversion
         .print("this.getAttribute('" + debeaned + "')")
-        .print(paramBoxing.isEmpty() ? "" : ")");
+        .print(boxingSuffix);
     } else {
-      out.print(paramBoxing)
+      out.print(boxingPrefix)
         .print("this.__" + debeaned)
-        .print(paramBoxing.isEmpty() ? "" : ")");
+        .print(boxingSuffix);
     }
     out
       .println(";")
@@ -372,6 +374,61 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
                                            "Lcom/google/gwt/core/client/JavaScriptObject;";
 
   private void generateDefaultFunctionAccessor(TreeLogger logger,
+      JMethod method, ClassBuffer cls) {
+    final String qualified = method.getEnclosingType().getQualifiedSourceName();
+    String typeName = cls.addImport(qualified);
+    MethodBuffer out =
+      cls
+        .createMethod(
+          "public static JavaScriptObject " + method.getName() + "()")
+        .addParameters(typeName + " o")
+        .makeJsni()
+        .addImports(JavaScriptObject.class)
+        .print("var func = o.@" + qualified + "::" + method.getName() + "(");
+    StringBuilder params = new StringBuilder();
+    Map<Character, String> boxers = new LinkedHashMap<>();
+    char paramName = 'a';
+    for (JType param : method.getParameterTypes()) {
+      out.print(param.getJNISignature());
+      if (params.length() > 0) {
+        params.append(',');
+      }
+      params.append(paramName);
+      String boxingPrefix = maybeBoxPrefix(logger, param, false, out);
+      String boxingSuffix = maybeBoxSuffix(logger, param, false, out);
+      boxers.put(paramName, boxingPrefix + paramName + boxingSuffix);
+      paramName++;
+    }
+    out
+      .println(");")
+      .println("return $entry(function(" + params + "){")
+      .indent();
+    String boxReturnPrefix = maybeBoxPrefix(logger, method.getReturnType(), true, out);
+    String boxReturnSuffix = maybeBoxSuffix(logger, method.getReturnType(), true, out);
+    boolean hasReturn = method.getReturnType() != JPrimitiveType.VOID;
+    if (hasReturn) {
+      // Non void return type; we may need to box/unbox the result
+      out.println("return " + boxReturnPrefix);
+    }
+    if (hasReturn) {
+      out.indent();
+    }
+    out
+      .println("func(this");
+    for (Character c : boxers.keySet()) {
+      out.print(", ").println(boxers.get(c));
+    }
+    out.print(")");
+    if (hasReturn) {
+      out.println().outdent().print(boxReturnSuffix);
+    }
+    out.println(";");
+    out
+      .outdent()
+      .println("});");
+  }
+
+  private void generateDefaultFunctionAccessor(TreeLogger logger,
       JMethod method, ClassBuffer cls, JType stringType) {
     final String qualified = method.getEnclosingType().getQualifiedSourceName();
     String typeName = cls.addImport(qualified);
@@ -392,24 +449,22 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
         params.append(',');
       }
       params.append(paramName);
-      String boxingPrefix = maybeBox(logger, param, false, out, stringType);
-      if (boxingPrefix.isEmpty()) {
-        boxers.put(paramName, Character.toString(paramName));
-      } else {
-        boxers.put(paramName, boxingPrefix + paramName + ")");
-      }
+      String boxingPrefix = maybeBoxPrefix(logger, param, false, out);
+      String boxingSuffix = maybeBoxSuffix(logger, param, false, out);
+      boxers.put(paramName, boxingPrefix + paramName + boxingSuffix);
       paramName++;
     }
     out
       .println(");")
       .println("return $entry(function(" + params + "){")
       .indent();
-    String boxReturn = maybeBox(logger, method.getReturnType(), true, out, stringType);
-    if (method.getReturnType() != JPrimitiveType.VOID) {
+    String boxReturnPrefix = maybeBoxPrefix(logger, method.getReturnType(), true, out);
+    String boxReturnSuffix = maybeBoxSuffix(logger, method.getReturnType(), true, out);
+    boolean hasReturn = method.getReturnType() != JPrimitiveType.VOID;
+    if (hasReturn) {
       // Non void return type; we may need to box/unbox the result
-      out.println("return " + boxReturn);
+      out.println("return " + boxReturnPrefix);
     }
-    boolean hasReturn = !boxReturn.isEmpty();
     if (hasReturn) {
       out.indent();
     }
@@ -420,7 +475,7 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
     }
     out.print(")");
     if (hasReturn) {
-      out.println().outdent().print(")");
+      out.println().outdent().print(boxReturnSuffix);
     }
     out.println(";");
     out
@@ -428,7 +483,7 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
       .println("});");
   }
 
-  private String maybeBox(TreeLogger logger, JType type, boolean jsToJava, MethodBuffer out, JType stringType) {
+  private String maybeBoxPrefix(TreeLogger logger, JType type, boolean jsToJava, MethodBuffer out) {
     if (type.isPrimitive() == null) {
       // The type is not primitive. If it maps to the object form of a
       // primitive, we must box it if primitive
@@ -444,32 +499,34 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
         return BOX_HELPER + "box" + type.getSimpleSourceName() + "("
           + JSO_PARAM + ")(";
       default:
-        if (jsToJava && type instanceof JClassType) {
+        if (type instanceof JClassType) {
           JClassType asClass = (JClassType) type;
           try {
-            JMethod fromString = asClass.getMethod("fromString", new JType[] { stringType });
-            if (fromString.isStatic()) {
-              // if fromString is static, we can just invoke it directly
-              return "@" + asClass.getQualifiedSourceName() + "::fromString(Ljava/lang/String;)(";
-            } else {
-              // however, if fromString is instance level, we must construct a
-              // new instance
-              if (asClass.getConstructor(new JType[0]) == null) {
-                logger.log(
-                  Type.WARN,
-                  "Found method fromString(String) in type "
-                    + asClass.getQualifiedSourceName()
-                    + ",  but could not use it for autoboxing because the method is "
-                    + "instance level and there is no zero-arg constructor available "
-                    + "to instantiate the given type");
+            if (jsToJava) {
+              JMethod valueOf = asClass.getMethod("valueOf", new JType[] { stringType });
+              if (valueOf.isStatic()) {
+                // if valueOf is static, we can just invoke it directly
+                return "@" + asClass.getQualifiedSourceName() + "::valueOf(Ljava/lang/String;)(";
               } else {
-                // we only support 0-arg constructors here
-                return "@" + asClass.getQualifiedSourceName() + "::new()().@"
-                  + asClass.getQualifiedSourceName() + "::fromString(Ljava/lang/String;)(";
+                // however, if fromString is instance level, we must construct a
+                // new instance
+                if (asClass.getConstructor(new JType[0]) == null) {
+                  logger.log(
+                    Type.WARN,
+                    "Found method valueOf(String) in type "
+                      + asClass.getQualifiedSourceName()
+                      + ",  but could not use it for autoboxing because the method is "
+                      + "instance level and there is no zero-arg constructor available "
+                      + "to instantiate the given type");
+                } else {
+                  // we only support 0-arg constructors here
+                  return "@" + asClass.getQualifiedSourceName() + "::new()().@"
+                    + asClass.getQualifiedSourceName() + "::valueOf(Ljava/lang/String;)(";
+                }
               }
             }
           } catch (NotFoundException ignored) {
-            // If there is no fromString method,
+            // If there is no valueOf(String) method,
             // we just don't perform any boxing.
           }
         }
@@ -497,6 +554,63 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
         return BOX_HELPER + "unboxFloat(" + JSO_PARAM + ")(";
       case DOUBLE:
         return BOX_HELPER + "unboxDouble(" + JSO_PARAM + ")(";
+      default:
+      }
+    }
+    return "";
+  }
+
+  private String maybeBoxSuffix(TreeLogger logger, JType type, boolean jsToJava, MethodBuffer out) {
+    if (type.isPrimitive() == null) {
+      // The type is not primitive. If it maps to the object form of a
+      // primitive, we must box it if primitive
+      switch (type.getQualifiedSourceName()) {
+      case "java.lang.Long":
+      case "java.lang.Boolean":
+      case "java.lang.Byte":
+      case "java.lang.Short":
+      case "java.lang.Character":
+      case "java.lang.Integer":
+      case "java.lang.Float":
+      case "java.lang.Double":
+        return ")";
+      default:
+        if (type instanceof JClassType) {
+          JClassType asClass = (JClassType) type;
+          try {
+            if (jsToJava) {
+              asClass.getMethod("valueOf", new JType[] { stringType });
+              return ")";
+            } else {
+              JMethod name = asClass.getMethod("name", new JType[0]);
+              if (name.isStatic()) {
+                // if name is static, we can't invoke it as a suffix, and, it
+                // really should never be static
+                logger.log(Type.WARN, "Unable to use method name() from " + asClass.getQualifiedSourceName() +
+                  " in web component factory");
+                return "";
+              } else {
+                return ".@" + asClass.getQualifiedSourceName() + "::name()()";
+              }
+            }
+          } catch (NotFoundException ignored) {
+            // If there is no valueOf(String) method,
+            // we just don't perform any boxing.
+          }
+        }
+      }
+    } else {
+      // The type is primitive, we must unbox whatever is given to us
+      switch (type.isPrimitive()) {
+      case BOOLEAN:
+      case BYTE:
+      case SHORT:
+      case CHAR:
+      case INT:
+      case LONG:
+      case FLOAT:
+      case DOUBLE:
+        return ")";
       default:
       }
     }

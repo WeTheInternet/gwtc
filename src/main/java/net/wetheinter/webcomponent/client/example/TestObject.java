@@ -11,7 +11,7 @@ public class TestObject {
     return val + ":" + state + "?" + text;
   }
 
-  public static TestObject fromString(String text) {
+  public static TestObject valueOf(String text) {
     if (text == null || text.isEmpty()) {
       return null;
     }
