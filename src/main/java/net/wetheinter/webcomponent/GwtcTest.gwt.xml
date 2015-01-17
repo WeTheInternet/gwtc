@@ -3,6 +3,11 @@
 <module rename-to="GwtcTest">
   <inherits name="com.google.gwt.core.Core" />
   <inherits name="elemental.Elemental" />
+  <inherits name="xapi.X_Elemental" />
+  <inherits name="xapi.X_Inject" />
+  <inherits name="xapi.X_Polymer" />
+  <inherits name="net.wetheinter.gwtc.Gwtc" />
+  <inherits name="com.google.gwt.user.RemoteService" />
   <entry-point class="net.wetheinter.webcomponent.client.GwtcEntryPoint" />
 
   <generate-with class="net.wetheinter.webcomponent.dev.WebComponentFactoryGenerator">

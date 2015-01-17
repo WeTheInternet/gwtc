@@ -2,6 +2,7 @@ package net.wetheinter.webcomponent.client;
 
 import static net.wetheinter.webcomponent.client.JsFunctionSupport.wrapConsumerOfThis;
 import static net.wetheinter.webcomponent.client.JsFunctionSupport.wrapRunnable;
+import static net.wetheinter.webcomponent.client.JsFunctionSupport.wrapWebComponentChangeHandler;
 
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -9,6 +10,8 @@ import java.util.function.IntSupplier;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+
+import net.wetheinter.webcomponent.client.api.OnWebComponentAttributeChanged;
 
 import com.google.gwt.core.client.JavaScriptObject;
 import com.google.gwt.core.client.UnsafeNativeLong;
@@ -38,6 +41,12 @@ public class WebComponentBuilder {
 
     @JsProperty
     JavaScriptObject detachedCallback();
+
+    @JsProperty
+    void attributeChangedCallback(JavaScriptObject callback);
+
+    @JsProperty
+    JavaScriptObject attributeChangedCallback();
   }
 
   public static WebComponentBuilder create(JavaScriptObject proto) {
@@ -70,6 +79,22 @@ public class WebComponentBuilder {
     return this;
   }
 
+  public <E extends Element> WebComponentBuilder attributeChangedCallback(
+      OnWebComponentAttributeChanged function) {
+    return attachedCallback(wrapWebComponentChangeHandler(function));
+  }
+
+  public WebComponentBuilder attributeChangedCallback(JavaScriptObject function) {
+    if (prototype.attributeChangedCallback() == null) {
+      prototype.attributeChangedCallback(function);
+    } else {
+      // append the functions together
+      prototype.attributeChangedCallback(JsFunctionSupport.merge(prototype
+        .attributeChangedCallback(), function));
+    }
+    return this;
+  }
+
   public WebComponentBuilder createdCallback(Runnable function) {
     return createdCallback(wrapRunnable(function));
   }
@@ -80,15 +105,25 @@ public class WebComponentBuilder {
   }
 
   public WebComponentBuilder createdCallback(JavaScriptObject function) {
+    function = reapplyThis(function);
     if (prototype.createdCallback() == null) {
       prototype.createdCallback(function);
     } else {
       // append the functions together
-      prototype.createdCallback(JsFunctionSupport.merge(prototype
-        .createdCallback(), function));
+      prototype.createdCallback(JsFunctionSupport.merge(
+        function,
+        prototype.createdCallback()
+      ));
     }
     return this;
   }
+
+  private native JavaScriptObject reapplyThis(JavaScriptObject f)
+  /*-{
+    return function() {
+      return f.apply(this, [this].concat(Array.prototype.slice.apply(arguments)));
+    };
+  }-*/;
 
   public WebComponentBuilder detachedCallback(Runnable function) {
     return detachedCallback(wrapRunnable(function));

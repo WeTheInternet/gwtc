@@ -1,7 +1,5 @@
 package net.wetheinter.webcomponent.client;
 
-import net.wetheinter.webcomponent.client.api.HasElement;
-
 import com.google.gwt.core.client.JavaScriptObject;
 import com.google.gwt.core.client.js.JsProperty;
 import com.google.gwt.core.client.js.JsType;
@@ -19,7 +17,9 @@ public interface Document {
   @JsProperty
   Document.RegisterElement registerElement();
 
-  <E extends HasElement<? extends Element>> E createElement(String string);
+  <E extends Element> E createElement(String string);
+
+  <E extends Element> E getElementById(String id);
 
   @JsProperty
   BodyElement body();

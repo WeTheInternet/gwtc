@@ -2,6 +2,8 @@ package net.wetheinter.webcomponent.client;
 
 import java.util.function.Consumer;
 
+import net.wetheinter.webcomponent.client.api.OnWebComponentAttributeChanged;
+
 import com.google.gwt.core.client.JavaScriptObject;
 
 public class JsFunctionSupport {
@@ -19,7 +21,7 @@ public class JsFunctionSupport {
 	    task.@java.util.function.Consumer::accept(Ljava/lang/Object;)(arguments[0]);
 	  });
 	 }-*/;
-	
+
 	@SuppressWarnings("rawtypes")
 	public static native JavaScriptObject wrapConsumerOfThis(Consumer task)
 	/*-{
@@ -27,6 +29,20 @@ public class JsFunctionSupport {
 	    task.@java.util.function.Consumer::accept(Ljava/lang/Object;)(this);
 	  });
 	 }-*/;
+
+	public static native JavaScriptObject wrapWebComponentChangeHandler(OnWebComponentAttributeChanged task)
+	/*-{
+	  return $entry(function(name, oldVal, newVal){
+	    task.@net.wetheinter.webcomponent.client.api.OnWebComponentAttributeChanged::onAttributeChanged(*)(name, oldVal, newVal);
+	  });
+	 }-*/;
+
+	public static <E> Consumer<E> mergeConsumer(Consumer<E> first, Consumer<E> second) {
+	  return e -> {
+	    first.accept(e);
+	    second.accept(e);
+	  };
+	}
 
 	public static native JavaScriptObject merge(JavaScriptObject first, JavaScriptObject second)
 	/*-{

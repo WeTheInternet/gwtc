@@ -21,6 +21,6 @@ public interface WebComponentFactory<W extends IsWebComponent<?>> {
    *
    * @return a new instance of the WebComponent this factory is generated for.
    */
-  W createWebComponent();
+  W newComponent();
 
 }

@@ -14,4 +14,9 @@ public @interface WebComponentMethod {
    * @return true to have properties map to/from element attributes.
    */
   boolean mapToAttribute() default false;
+
+  Class<? extends WebComponentCallback> callbackType() default WebComponentCallback.class;
+
+  boolean useJsniWildcard() default false;
+
 }
