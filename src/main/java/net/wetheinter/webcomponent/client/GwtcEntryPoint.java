@@ -8,20 +8,22 @@ import static xapi.elemental.X_Elemental.injectCss;
 import net.wetheinter.gwtc.client.CompositeCompilerElement;
 import net.wetheinter.gwtc.client.GwtcModePickerElement;
 import net.wetheinter.webcomponent.client.example.ExampleTheme;
-import net.wetheinter.webcomponent.client.io.GwtcIO;
-import net.wetheinter.webcomponent.client.io.GwtcIOAsync;
 import xapi.polymer.PolymerElement;
 
 import com.google.gwt.core.client.EntryPoint;
-import com.google.gwt.core.shared.GWT;
+import com.google.gwt.core.client.GWT;
 import com.google.gwt.dev.util.arg.OptionJsInteropMode.Mode;
 import com.google.gwt.dev.util.arg.SourceLevel;
-import com.google.gwt.user.client.rpc.AsyncCallback;
-import com.google.gwt.user.client.rpc.impl.RemoteServiceProxy;
 
+import elemental.client.Browser;
 import elemental.dom.Element;
+import elemental.events.MessageEvent;
+import elemental.html.EventSource;
+import elemental.xml.XMLHttpRequest;
 
 public class GwtcEntryPoint implements EntryPoint {
+
+  private static final String IO_URL = GWT.getHostPageBaseURL()+"io";
 
   @Override
   public void onModuleLoad() {
@@ -32,9 +34,6 @@ public class GwtcEntryPoint implements EntryPoint {
   }
 
   private void onWebComponentApiLoaded() {
-    final GwtcIOAsync async = GWT.create(GwtcIO.class);
-    // Modify the RPC service to point to the host page server instead of the GWT codeserver.
-    ((RemoteServiceProxy)async).setServiceEntryPoint(com.google.gwt.core.client.GWT.getHostPageBaseURL()+"gwtc");
 
     final PolymerElement compileButton = PolymerElement.newButtonRaised("Compile");
     final CompositeCompilerElement compileOptions = NEW_COMPOSITE_COMPILER_ELEMENT.newComponent();
@@ -55,17 +54,32 @@ public class GwtcEntryPoint implements EntryPoint {
 
     compileButton.onClick(e->{
       String args = compileOptions.getArgs();
-      async.compile("meow", args, new AsyncCallback<String>() {
-        @Override
-        public void onSuccess(String result) {
-          JsSupport.console().log(result);
-        }
 
-        @Override
-        public void onFailure(Throwable caught) {
-          JsSupport.console().log(caught);
+      XMLHttpRequest xhr = Browser.getWindow().newXMLHttpRequest();
+      xhr.setOnreadystatechange(ev->{
+        if (xhr.getReadyState() == XMLHttpRequest.DONE) {
+          xhr.setOnreadystatechange(null);
+          String id = xhr.getResponseText();
+          EventSource io = Browser.getWindow().newEventSource(IO_URL+"?compile="+id);
+          io.setOnmessage(event->{
+            MessageEvent message = (MessageEvent) event;
+            JsSupport.console().log(message);
+          });
+          io.addEventListener("close", event-> {
+            io.close();
+          }, true);
+          io.setOnopen(event->{
+            JsSupport.console().log("Opening stream");
+          });
+          io.setOnerror(event->{
+            JsSupport.console().log("Streaming error");
+            JsSupport.console().log(event);
+          });
         }
       });
+      xhr.open("POST", IO_URL, true);
+      xhr.send(modePicker.getValue().name()+"::"+args);
+
     });
 
     injectCss(ExampleTheme.class);

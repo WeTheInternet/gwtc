@@ -28,7 +28,6 @@ import xapi.dev.source.ClassBuffer;
 import xapi.dev.source.MethodBuffer;
 import xapi.dev.source.SourceBuilder;
 import xapi.elemental.X_Elemental;
-import xapi.polymer.BooleanPickerElement;
 
 import com.google.gwt.core.client.JavaScriptObject;
 import com.google.gwt.core.client.UnsafeNativeLong;
@@ -306,7 +305,9 @@ public class WebComponentFactoryGenerator extends IncrementalGenerator {
   }
 
   protected Type logLevel(String typeName) {
-    return BooleanPickerElement.class.getName().equals(typeName) ? Type.INFO : Type.TRACE;
+    return
+//        BooleanPickerElement.class.getName().equals(typeName) ? Type.INFO : Type.TRACE;
+        Type.DEBUG;
   }
 
   private void generateFunctionAccessors(TreeLogger logger,

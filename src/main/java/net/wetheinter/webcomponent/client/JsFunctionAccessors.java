@@ -1,6 +1,7 @@
 package net.wetheinter.webcomponent.client;
 
 import com.google.gwt.core.client.JavaScriptObject;
+import com.google.gwt.core.client.UnsafeNativeLong;
 
 public class JsFunctionAccessors {
 
@@ -95,6 +96,7 @@ public class JsFunctionAccessors {
     (key, @net.wetheinter.webcomponent.client.JsSupport::unboxInteger(Lcom/google/gwt/core/client/JavaScriptObject;));
   }-*/;
 
+  @UnsafeNativeLong
   protected static native JavaScriptObject attributeGetLong(String key)
   /*-{
     return function() {
@@ -102,6 +104,7 @@ public class JsFunctionAccessors {
     }
   }-*/;
 
+  @UnsafeNativeLong
   protected static native JavaScriptObject attributeSetLong(String key)
   /*-{
     return @net.wetheinter.webcomponent.client.JsFunctionAccessors::attributeSetter(Ljava/lang/String;Lcom/google/gwt/core/client/JavaScriptObject;)
@@ -223,6 +226,7 @@ public class JsFunctionAccessors {
     }
   }-*/;
 
+  @UnsafeNativeLong
   protected static native JavaScriptObject getterLong(String key)
   /*-{
     return function() {
@@ -230,6 +234,7 @@ public class JsFunctionAccessors {
     }
   }-*/;
 
+  @UnsafeNativeLong
   protected static native JavaScriptObject setterLong(String key) /*-{
     return function(i) {
       this[key] = i == null ? null : @net.wetheinter.webcomponent.client.JsSupport::unboxLong(Lcom/google/gwt/core/client/JavaScriptObject;)(i);
@@ -237,6 +242,7 @@ public class JsFunctionAccessors {
     }
   }-*/;
 
+  @UnsafeNativeLong
   protected static native JavaScriptObject getterFloat(String key)
   /*-{
     return function() {
